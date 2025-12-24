@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Checkboard pattern for transparency */
+        .checkboard {
+            background-color: #ffffff;
+            background-image:
+                linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+                linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+                linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        /* Pixelated rendering for the canvas to keep edges sharp */
+        canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Animation for selection marquee */
+        @keyframes march {
+            0% {
+                line-dash-offset: 0;
+            }
+
+            100% {
+                line-dash-offset: 8;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white h-screen flex flex-col overflow-hidden font-sans select-none">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 h-14 flex items-center justify-between px-4 shrink-0 z-10">
+        <div class="flex items-center gap-2">
+            <i data-lucide="grid-3x3" class="text-indigo-400"></i>
+            <h1 class="font-bold text-lg tracking-wide">Pixel<span class="text-indigo-400">Forge</span></h1>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <div
+                class="text-xs text-gray-400 flex items-center gap-2 mr-4 bg-gray-900 px-3 py-1 rounded-full border border-gray-700">
+                <span id="canvasSizeDisplay">16 x 16</span>
+            </div>
+            <button onclick="exportImage()"
+                class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                <i data-lucide="download" class="w-4 h-4"></i> Export
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Toolbar (Tools) -->
+        <aside class="w-16 bg-gray-800 border-r border-gray-700 flex flex-col items-center py-4 gap-4 z-10 shrink-0">
+            <button class="tool-btn p-2 rounded-lg bg-indigo-600 text-white" data-tool="pen" title="Pencil (P)">
+                <i data-lucide="pencil" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="eraser"
+                title="Eraser (E)">
+                <i data-lucide="eraser" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="fill"
+                title="Fill Bucket (F)">
+                <i data-lucide="paint-bucket" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="select"
+                title="Select / Move (S)">
+                <i data-lucide="box-select" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="picker"
+                title="Color Picker (I)">
+                <i data-lucide="pipette" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white hidden"
+                id="stampToolBtn" data-tool="stamp" title="Stamp Tool">
+                <i data-lucide="stamp" class="w-6 h-6"></i>
+            </button>
+
+            <div class="w-8 h-px bg-gray-700 my-1"></div>
+
+            <button id="undoBtn" class="p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white"
+                title="Undo (Ctrl+Z)">
+                <i data-lucide="undo-2" class="w-6 h-6"></i>
+            </button>
+            <button id="clearBtn" class="p-2 rounded-lg hover:bg-gray-700 text-red-400 hover:text-red-300"
+                title="Clear Canvas">
+                <i data-lucide="trash-2" class="w-6 h-6"></i>
+            </button>
+        </aside>
+
+        <!-- Center Canvas Area -->
+        <main class="flex-1 bg-gray-900 relative overflow-hidden flex items-center justify-center"
+            id="canvas-container">
+            <!-- Scrollable Container -->
+            <div class="absolute inset-0 overflow-auto flex items-center justify-center p-8 custom-scrollbar">
+                <!-- The workspace wrapper -->
+                <div class="relative shadow-2xl shadow-black mx-auto my-auto" id="canvas-wrapper">
+                    <!-- Checkboard background -->
+                    <div class="absolute inset-0 checkboard pointer-events-none rounded-sm"></div>
+                    <!-- Drawing Canvas -->
+                    <canvas id="mainCanvas" class="relative z-10 cursor-crosshair block bg-transparent"></canvas>
+                    <!-- Grid Overlay -->
+                    <canvas id="gridCanvas" class="absolute inset-0 z-20 pointer-events-none opacity-50"></canvas>
+                    <!-- Hover Cursor Overlay -->
+                    <canvas id="cursorCanvas" class="absolute inset-0 z-30 cursor-crosshair"></canvas>
+                </div>
+            </div>
+
+            <!-- Zoom Controls Floating -->
+            <div
+                class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 rounded-full px-4 py-2 flex items-center gap-4 shadow-lg border border-gray-700 z-40">
+                <button id="zoomOut" class="hover:text-indigo-400"><i data-lucide="minus" class="w-4 h-4"></i></button>
+                <span id="zoomLevel" class="text-sm font-mono text-gray-300 w-12 text-center">100%</span>
+                <button id="zoomIn" class="hover:text-indigo-400"><i data-lucide="plus" class="w-4 h-4"></i></button>
+            </div>
+        </main>
+
+        <!-- Right Sidebar (Properties, Colors, Symbols) -->
+        <aside class="w-72 bg-gray-800 border-l border-gray-700 flex flex-col z-10 shrink-0">
+
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-700">
+                <button
+                    class="flex-1 py-3 text-xs font-bold uppercase tracking-wide text-white border-b-2 border-indigo-500"
+                    id="tab-properties">Properties</button>
+                <button
+                    class="flex-1 py-3 text-xs font-bold uppercase tracking-wide text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-gray-600"
+                    id="tab-symbols">Symbols</button>
+            </div>
+
+            <!-- Properties Panel -->
+            <div id="panel-properties" class="flex-1 overflow-y-auto flex flex-col">
+                <!-- Color Picker -->
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Color Palette</h3>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="relative group">
+                            <input type="color" id="colorPicker" value="#000000"
+                                class="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10">
+                            <div id="currentColorDisplay"
+                                class="w-10 h-10 rounded-md bg-black border border-gray-600 shadow-inner group-hover:border-white transition-colors">
+                            </div>
+                        </div>
+                        <div class="text-xs text-gray-400 font-mono flex-1">
+                            <span id="hexDisplay">#000000</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-6 gap-2" id="paletteGrid"></div>
+                </div>
+
+                <!-- Canvas Settings -->
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Canvas Size</h3>
+
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-xs text-gray-500">Width</label>
+                                <input type="number" id="widthInput" value="16" min="4" max="640"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 text-center">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">Height</label>
+                                <input type="number" id="heightInput" value="16" min="4" max="640"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 text-center">
+                            </div>
+                        </div>
+
+                        <!-- Presets -->
+                        <div class="space-y-2">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold">Sprites</p>
+                            <div class="flex gap-2">
+                                <button onclick="setPreset(16, 16)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">16x16</button>
+                                <button onclick="setPreset(32, 32)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">32x32</button>
+                                <button onclick="setPreset(64, 64)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">64x64</button>
+                            </div>
+
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mt-2">Layouts</p>
+                            <div class="flex gap-2">
+                                <button onclick="setPreset(320, 180)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors"
+                                    title="Low Res 16:9">320x180</button>
+                                <button onclick="setPreset(640, 360)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors"
+                                    title="Medium Res 16:9">640x360</button>
+                            </div>
+                        </div>
+
+                        <button id="resizeBtn"
+                            class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors mt-2">Create
+                            New Canvas</button>
+                    </div>
+                </div>
+
+                <!-- Tools Options -->
+                <div class="p-4 flex-1">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Options</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Show Grid</span>
+                            <input type="checkbox" id="gridToggle" checked class="accent-indigo-500">
+                        </label>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Mirror X</span>
+                            <input type="checkbox" id="mirrorX" class="accent-indigo-500">
+                        </label>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Mirror Y</span>
+                            <input type="checkbox" id="mirrorY" class="accent-indigo-500">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Symbols Panel (Hidden by default) -->
+            <div id="panel-symbols" class="flex-1 overflow-y-auto flex flex-col hidden bg-gray-850">
+                <div class="p-4 border-b border-gray-700 bg-gray-800">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Symbol Library</h3>
+
+                    <div class="flex gap-2 mb-3">
+                        <button onclick="saveToLibrary()"
+                            class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="save" class="w-3 h-3"></i> Save <span id="saveBtnText">Symbol</span>
+                        </button>
+                    </div>
+
+                    <!-- Rotation Controls -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="rotateStamp(-90)"
+                            class="bg-gray-700 hover:bg-gray-600 py-1.5 rounded text-xs text-gray-300 hover:text-white transition-colors flex items-center justify-center gap-1"
+                            title="Rotate Left (Shift+R)">
+                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Left
+                        </button>
+                        <button onclick="rotateStamp(90)"
+                            class="bg-gray-700 hover:bg-gray-600 py-1.5 rounded text-xs text-gray-300 hover:text-white transition-colors flex items-center justify-center gap-1"
+                            title="Rotate Right (R)">
+                            <i data-lucide="rotate-cw" class="w-3 h-3"></i> Right
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-2 flex-1 overflow-y-auto">
+                    <div id="symbolsGrid" class="grid grid-cols-3 gap-2">
+                        <!-- Symbols injected here -->
+                    </div>
+                    <div id="emptySymbolsMsg" class="text-center py-8 text-gray-600 text-sm">
+                        No saved symbols yet.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview (Fixed at bottom) -->
+            <div class="p-4 bg-gray-900 border-t border-gray-700 shrink-0">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mini Preview</h3>
+                <div
+                    class="flex justify-center bg-gray-800 p-2 rounded border border-gray-700 checkboard relative overflow-hidden h-32 flex items-center">
+                    <canvas id="previewCanvas" class="max-w-full max-h-full mx-auto"></canvas>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+
+    <!-- Hidden download link -->
+    <a id="downloadLink" style="display:none"></a>
+
+    <script>
+        // --- State ---
+        let canvasWidth = 16;
+        let canvasHeight = 16;
+        let zoom = 20;
+        let currentTool = 'pen'; // pen, eraser, fill, picker, stamp, select
+        let currentColor = '#000000';
+        let isDrawing = false;
+        let showGrid = true;
+        let history = [];
+        let historyStep = -1;
+
+        // Stamp State
+        let baseStampImage = null;
+        let activeStampCanvas = null;
+        let stampRotation = 0;
+        let symbols = [];
+
+        // Selection State
+        let selection = null; // { x, y, w, h, content: Canvas, isFloating: bool }
+        let selectionDragStart = null;
+        let isSelecting = false;
+        let isMovingSelection = false;
+
+        // DOM Elements
+        const mainCanvas = document.getElementById('mainCanvas');
+        const gridCanvas = document.getElementById('gridCanvas');
+        const cursorCanvas = document.getElementById('cursorCanvas');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const ctx = mainCanvas.getContext('2d', { willReadFrequently: true });
+        const gridCtx = gridCanvas.getContext('2d');
+        const cursorCtx = cursorCanvas.getContext('2d');
+        const previewCtx = previewCanvas.getContext('2d');
+
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        const undoBtn = document.getElementById('undoBtn');
+        const colorPicker = document.getElementById('colorPicker');
+        const hexDisplay = document.getElementById('hexDisplay');
+        const currentColorDisplay = document.getElementById('currentColorDisplay');
+        const stampToolBtn = document.getElementById('stampToolBtn');
+        const saveBtnText = document.getElementById('saveBtnText');
+
+        // --- Initialization ---
+
+        function init() {
+            lucide.createIcons();
+            loadSymbols();
+
+            // Generate default palette
+            const palette = [
+                '#000000', '#1a1c2c', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764',
+                '#257179', '#29366f', '#3b5dc9', '#41a6f6', '#73eff7', '#f4f4f4', '#94b0c2', '#566c86', '#333c57',
+                '#ffffff', '#9badb7', '#847e87', '#696a6a', '#595652', '#76428a', '#ac3232', '#d95763', '#d77bba'
+            ];
+            const paletteGrid = document.getElementById('paletteGrid');
+            palette.forEach(color => {
+                const btn = document.createElement('div');
+                btn.className = 'w-6 h-6 rounded border border-gray-600 cursor-pointer hover:border-white transition-colors';
+                btn.style.backgroundColor = color;
+                btn.onclick = () => setColor(color);
+                paletteGrid.appendChild(btn);
+            });
+
+            setupCanvas(16, 16);
+            setupTabs();
+
+            // Start overlay loop or rely on events? Events are enough, but we need a render function
+        }
+
+        function setupCanvas(w, h) {
+            canvasWidth = w;
+            canvasHeight = h;
+
+            mainCanvas.width = w;
+            mainCanvas.height = h;
+            previewCanvas.width = w;
+            previewCanvas.height = h;
+
+            if (w > 100 || h > 100) { zoom = 4; } else if (w > 64) { zoom = 8; } else { zoom = 20; }
+
+            updateZoom();
+            ctx.clearRect(0, 0, w, h);
+            saveHistory();
+            drawGrid();
+            updatePreview();
+
+            document.getElementById('canvasSizeDisplay').innerText = `${w} x ${h}`;
+        }
+
+        function setupTabs() {
+            const tabProps = document.getElementById('tab-properties');
+            const tabSyms = document.getElementById('tab-symbols');
+            const panelProps = document.getElementById('panel-properties');
+            const panelSyms = document.getElementById('panel-symbols');
+
+            function switchTab(tab) {
+                if (tab === 'props') {
+                    panelProps.classList.remove('hidden');
+                    panelSyms.classList.add('hidden');
+                    tabProps.classList.add('border-indigo-500', 'text-white');
+                    tabProps.classList.remove('border-transparent', 'text-gray-400');
+                    tabSyms.classList.remove('border-indigo-500', 'text-white');
+                    tabSyms.classList.add('border-transparent', 'text-gray-400');
+                } else {
+                    panelProps.classList.add('hidden');
+                    panelSyms.classList.remove('hidden');
+                    tabSyms.classList.add('border-indigo-500', 'text-white');
+                    tabSyms.classList.remove('border-transparent', 'text-gray-400');
+                    tabProps.classList.remove('border-indigo-500', 'text-white');
+                    tabProps.classList.add('border-transparent', 'text-gray-400');
+                }
+            }
+
+            tabProps.onclick = () => switchTab('props');
+            tabSyms.onclick = () => switchTab('syms');
+        }
+
+        // --- Drawing Logic ---
+
+        function updateZoom() {
+            const displayW = canvasWidth * zoom;
+            const displayH = canvasHeight * zoom;
+
+            mainCanvas.style.width = `${displayW}px`;
+            mainCanvas.style.height = `${displayH}px`;
+
+            gridCanvas.width = displayW;
+            gridCanvas.height = displayH;
+            cursorCanvas.width = displayW;
+            cursorCanvas.height = displayH;
+
+            document.getElementById('zoomLevel').innerText = Math.round((zoom / 20) * 100) + '%';
+
+            drawGrid();
+            renderOverlay();
+        }
+
+        function drawGrid() {
+            gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+            if (!showGrid || zoom < 4) return;
+
+            gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            gridCtx.lineWidth = 1;
+            gridCtx.beginPath();
+
+            for (let x = 0; x <= canvasWidth; x++) {
+                gridCtx.moveTo(Math.floor(x * zoom), 0);
+                gridCtx.lineTo(Math.floor(x * zoom), gridCanvas.height);
+            }
+
+            for (let y = 0; y <= canvasHeight; y++) {
+                gridCtx.moveTo(0, Math.floor(y * zoom));
+                gridCtx.lineTo(gridCanvas.width, Math.floor(y * zoom));
+            }
+            gridCtx.stroke();
+        }
+
+        function updatePreview() {
+            previewCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+            previewCtx.drawImage(mainCanvas, 0, 0);
+
+            // If selection is floating, we should show it in preview too? 
+            // Complex to do without altering main canvas, but ok for now.
+        }
+
+        function getPixelCoords(e) {
+            const rect = mainCanvas.getBoundingClientRect();
+            const scaleX = rect.width / canvasWidth;
+            const scaleY = rect.height / canvasHeight;
+            const x = Math.floor((e.clientX - rect.left) / scaleX);
+            const y = Math.floor((e.clientY - rect.top) / scaleY);
+            return { x, y };
+        }
+
+        // --- Selection Logic ---
+
+        function anchorSelection() {
+            if (!selection) return;
+
+            if (selection.isFloating && selection.content) {
+                // Draw back onto main canvas
+                ctx.drawImage(selection.content, selection.x, selection.y);
+                saveHistory();
+                updatePreview();
+            }
+
+            selection = null;
+            saveBtnText.innerText = "Symbol";
+            renderOverlay();
+        }
+
+        function liftSelection() {
+            if (!selection || selection.isFloating) return;
+
+            // 1. Capture content
+            const tempC = document.createElement('canvas');
+            tempC.width = selection.w;
+            tempC.height = selection.h;
+            const tempCtx = tempC.getContext('2d');
+            tempCtx.drawImage(mainCanvas, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+
+            // 2. Clear from main canvas
+            ctx.clearRect(selection.x, selection.y, selection.w, selection.h);
+
+            // 3. Update state
+            selection.content = tempC;
+            selection.isFloating = true;
+            updatePreview();
+        }
+
+        function deleteSelection() {
+            if (!selection) return;
+            if (selection.isFloating) {
+                // Just discard it
+                selection = null;
+            } else {
+                // Clear area
+                ctx.clearRect(selection.x, selection.y, selection.w, selection.h);
+                saveHistory();
+                selection = null;
+            }
+            updatePreview();
+            renderOverlay();
+            saveBtnText.innerText = "Symbol";
+        }
+
+        // --- Render Overlay (Cursor + Selection) ---
+
+        let mousePos = { x: -1, y: -1 };
+
+        function renderOverlay() {
+            cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+
+            // 1. Draw Selection
+            if (selection) {
+                // Floating Content
+                if (selection.isFloating && selection.content) {
+                    cursorCtx.imageSmoothingEnabled = false;
+                    cursorCtx.drawImage(
+                        selection.content,
+                        selection.x * zoom,
+                        selection.y * zoom,
+                        selection.w * zoom,
+                        selection.h * zoom
+                    );
+                }
+
+                // Border (Marching Ants)
+                cursorCtx.strokeStyle = '#fff';
+                cursorCtx.lineWidth = 1;
+                cursorCtx.setLineDash([4, 4]);
+                cursorCtx.lineDashOffset = (Date.now() / 50) % 8; // Animate in loop? Needs rAF.
+                // For now, static dash is fine, or simple static
+
+                cursorCtx.strokeRect(
+                    selection.x * zoom,
+                    selection.y * zoom,
+                    selection.w * zoom,
+                    selection.h * zoom
+                );
+
+                // Contrast border
+                cursorCtx.strokeStyle = '#000';
+                cursorCtx.lineDashOffset = 4;
+                cursorCtx.strokeRect(
+                    selection.x * zoom,
+                    selection.y * zoom,
+                    selection.w * zoom,
+                    selection.h * zoom
+                );
+
+                cursorCtx.setLineDash([]);
+            }
+
+            // 2. Draw Tool Cursor (if not creating selection)
+            if (mousePos.x >= 0 && !isSelecting && !isMovingSelection) {
+                const x = mousePos.x;
+                const y = mousePos.y;
+
+                if (currentTool === 'stamp' && activeStampCanvas) {
+                    // Stamp Ghost
+                    const offsetX = Math.floor(activeStampCanvas.width / 2);
+                    const offsetY = Math.floor(activeStampCanvas.height / 2);
+
+                    cursorCtx.globalAlpha = 0.5;
+                    cursorCtx.imageSmoothingEnabled = false;
+                    cursorCtx.drawImage(
+                        activeStampCanvas,
+                        (x - offsetX) * zoom,
+                        (y - offsetY) * zoom,
+                        activeStampCanvas.width * zoom,
+                        activeStampCanvas.height * zoom
+                    );
+                    cursorCtx.globalAlpha = 1.0;
+                    cursorCtx.strokeStyle = '#6366f1';
+                    cursorCtx.strokeRect((x - offsetX) * zoom, (y - offsetY) * zoom, activeStampCanvas.width * zoom, activeStampCanvas.height * zoom);
+                } else if (currentTool !== 'select') {
+                    // Standard Pixel Cursor
+                    cursorCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                    cursorCtx.lineWidth = 2;
+                    cursorCtx.strokeRect(x * zoom, y * zoom, zoom, zoom);
+                }
+            }
+        }
+
+        // --- Interaction Handlers ---
+
+        function putPixel(x, y, color) {
+            if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) return;
+            ctx.fillStyle = color;
+            ctx.clearRect(x, y, 1, 1);
+            if (color !== 'transparent') ctx.fillRect(x, y, 1, 1);
+        }
+
+        function handleDraw(x, y) {
+            if (currentTool === 'select') return; // Handled in move logic
+
+            // ... (Same drawing logic as before) ...
+            if (currentTool === 'stamp' && activeStampCanvas) {
+                const offsetX = Math.floor(activeStampCanvas.width / 2);
+                const offsetY = Math.floor(activeStampCanvas.height / 2);
+                ctx.drawImage(activeStampCanvas, x - offsetX, y - offsetY);
+                updatePreview();
+                return;
+            }
+
+            const mirrorX = document.getElementById('mirrorX').checked;
+            const mirrorY = document.getElementById('mirrorY').checked;
+            const drawOp = (tx, ty) => {
+                if (currentTool === 'pen') putPixel(tx, ty, currentColor);
+                else if (currentTool === 'eraser') ctx.clearRect(tx, ty, 1, 1);
+            };
+
+            drawOp(x, y);
+            if (mirrorX) drawOp(canvasWidth - 1 - x, y);
+            if (mirrorY) drawOp(x, canvasHeight - 1 - y);
+            if (mirrorX && mirrorY) drawOp(canvasWidth - 1 - x, canvasHeight - 1 - y);
+            updatePreview();
+        }
+
+        function floodFill(startX, startY, fillColor) {
+            const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+            const pixelData = imgData.data;
+            const getColorAt = (x, y) => {
+                if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) return -1;
+                const i = (y * canvasWidth + x) * 4;
+                return (pixelData[i] << 24) | (pixelData[i + 1] << 16) | (pixelData[i + 2] << 8) | pixelData[i + 3];
+            };
+            const r = parseInt(fillColor.slice(1, 3), 16);
+            const g = parseInt(fillColor.slice(3, 5), 16);
+            const b = parseInt(fillColor.slice(5, 7), 16);
+            const targetColorInt = (r << 24) | (g << 16) | (b << 8) | 255;
+            const startColorInt = getColorAt(startX, startY);
+            if (startColorInt === targetColorInt) return;
+
+            const stack = [[startX, startY]];
+            while (stack.length) {
+                const [x, y] = stack.pop();
+                const currColor = getColorAt(x, y);
+                if (currColor === startColorInt) {
+                    const i = (y * canvasWidth + x) * 4;
+                    pixelData[i] = r; pixelData[i + 1] = g; pixelData[i + 2] = b; pixelData[i + 3] = 255;
+                    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+            updatePreview();
+            saveHistory();
+        }
+
+        function pickColor(x, y) {
+            const p = ctx.getImageData(x, y, 1, 1).data;
+            if (p[3] === 0) return;
+            const hex = "#" + ("0" + p[0].toString(16)).slice(-2) + ("0" + p[1].toString(16)).slice(-2) + ("0" + p[2].toString(16)).slice(-2);
+            setColor(hex);
+            setTool('pen');
+        }
+
+        // --- Event Listeners ---
+
+        const startDrawing = (e) => {
+            const { x, y } = getPixelCoords(e);
+            mousePos = { x, y };
+
+            if (currentTool === 'select') {
+                if (selection) {
+                    // Check if inside existing selection
+                    if (x >= selection.x && x < selection.x + selection.w &&
+                        y >= selection.y && y < selection.y + selection.h) {
+
+                        // Start Moving
+                        if (!selection.isFloating) {
+                            liftSelection();
+                        }
+                        isMovingSelection = true;
+                        selectionDragStart = { x: x - selection.x, y: y - selection.y };
+                        return;
+                    } else {
+                        // Click outside: Anchor and start new
+                        anchorSelection();
+                    }
+                }
+
+                // Start creating new selection
+                isSelecting = true;
+                selectionDragStart = { x, y };
+                selection = { x, y, w: 0, h: 0, isFloating: false, content: null };
+                saveBtnText.innerText = "Group";
+                renderOverlay();
+                return;
+            }
+
+            // If we have a selection active but use another tool, anchor it?
+            // Usually yes.
+            if (selection) anchorSelection();
+
+            if (currentTool === 'fill') { floodFill(x, y, currentColor); return; }
+            if (currentTool === 'picker') { pickColor(x, y); return; }
+
+            isDrawing = true;
+            handleDraw(x, y);
+        };
+
+        const moveDrawing = (e) => {
+            const { x, y } = getPixelCoords(e);
+            mousePos = { x, y };
+
+            if (currentTool === 'select') {
+                if (isSelecting) {
+                    // Update dimensions
+                    const start = selectionDragStart;
+                    const w = x - start.x; // + (x >= start.x ? 1 : 0); // Inclusive logic is tricky
+                    const h = y - start.y; // + (y >= start.y ? 1 : 0);
+
+                    // Simple Box Logic: Start corner to current corner
+                    // We need to normalize so w/h are positive
+                    const x1 = Math.min(start.x, x);
+                    const y1 = Math.min(start.y, y);
+                    const x2 = Math.max(start.x, x);
+                    const y2 = Math.max(start.y, y);
+
+                    selection.x = x1;
+                    selection.y = y1;
+                    selection.w = Math.max(1, x2 - x1 + 1);
+                    selection.h = Math.max(1, y2 - y1 + 1);
+                    renderOverlay();
+                } else if (isMovingSelection) {
+                    // Move the selection rect
+                    selection.x = x - selectionDragStart.x;
+                    selection.y = y - selectionDragStart.y;
+                    renderOverlay();
+                } else {
+                    renderOverlay(); // Just updating cursor hover over selection
+                }
+                return;
+            }
+
+            renderOverlay(); // Update cursor position
+            if (!isDrawing) return;
+            handleDraw(x, y);
+        };
+
+        const endDrawing = () => {
+            if (isSelecting) {
+                isSelecting = false;
+                // If selection is tiny (0 size), cancel it
+                if (selection.w <= 0 || selection.h <= 0) selection = null;
+            }
+            if (isMovingSelection) {
+                isMovingSelection = false;
+                // Don't anchor yet, let user place it
+            }
+            if (isDrawing) {
+                isDrawing = false;
+                saveHistory();
+            }
+        };
+
+        cursorCanvas.addEventListener('mousedown', startDrawing);
+        cursorCanvas.addEventListener('mousemove', moveDrawing);
+        cursorCanvas.addEventListener('mouseleave', () => {
+            mousePos = { x: -1, y: -1 };
+            renderOverlay();
+        });
+        window.addEventListener('mouseup', endDrawing);
+
+        cursorCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e.touches[0]); }, { passive: false });
+        cursorCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDrawing(e.touches[0]); }, { passive: false });
+        window.addEventListener('touchend', endDrawing);
+
+        // --- History ---
+        function saveHistory() {
+            historyStep++;
+            if (historyStep < history.length) { history.length = historyStep; }
+            history.push(mainCanvas.toDataURL());
+            if (history.length > 20) { history.shift(); historyStep--; }
+            updateUndoBtn();
+        }
+
+        function undo() {
+            if (selection) anchorSelection(); // Anchor before undoing to prevent weird states
+            if (historyStep > 0) {
+                historyStep--;
+                const img = new Image();
+                img.src = history[historyStep];
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                    ctx.drawImage(img, 0, 0);
+                    updatePreview();
+                };
+            }
+            updateUndoBtn();
+        }
+
+        function updateUndoBtn() { undoBtn.style.opacity = historyStep > 0 ? 1 : 0.5; }
+        undoBtn.addEventListener('click', undo);
+
+        // --- Symbols / Library System ---
+
+        function saveToLibrary() {
+            let dataUrl;
+            let width, height;
+
+            if (selection && selection.isFloating && selection.content) {
+                // Save Selection
+                dataUrl = selection.content.toDataURL();
+                width = selection.w;
+                height = selection.h;
+            } else if (selection) {
+                // Selection exists but not floating (not cut yet), lift temporarily to save?
+                // Or just grab pixels from main
+                const tempC = document.createElement('canvas');
+                tempC.width = selection.w;
+                tempC.height = selection.h;
+                tempC.getContext('2d').drawImage(mainCanvas, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+                dataUrl = tempC.toDataURL();
+                width = selection.w;
+                height = selection.h;
+            } else {
+                // Save Whole Canvas
+                dataUrl = mainCanvas.toDataURL();
+                width = canvasWidth;
+                height = canvasHeight;
+            }
+
+            const symbol = { id: Date.now(), data: dataUrl, width, height };
+            symbols.push(symbol);
+            localStorage.setItem('pixel_forge_symbols', JSON.stringify(symbols));
+            renderSymbols();
+
+            const tab = document.getElementById('tab-symbols');
+            tab.classList.add('text-indigo-400');
+            setTimeout(() => tab.classList.remove('text-indigo-400'), 200);
+        }
+
+        function loadSymbols() {
+            const stored = localStorage.getItem('pixel_forge_symbols');
+            if (stored) { symbols = JSON.parse(stored); renderSymbols(); }
+        }
+
+        function deleteSymbol(id) {
+            if (confirm("Delete this symbol?")) {
+                symbols = symbols.filter(s => s.id !== id);
+                localStorage.setItem('pixel_forge_symbols', JSON.stringify(symbols));
+                renderSymbols();
+                if (currentTool === 'stamp') setTool('pen');
+            }
+        }
+
+        function useSymbol(symbolId) {
+            if (selection) anchorSelection(); // Anchor if selecting
+
+            const sym = symbols.find(s => s.id === symbolId);
+            if (!sym) return;
+            const img = new Image();
+            img.src = sym.data;
+            img.onload = () => {
+                baseStampImage = img;
+                stampRotation = 0;
+                generateRotatedStamp();
+                setTool('stamp');
+            };
+        }
+
+        // --- Stamp Rotation Logic ---
+        window.rotateStamp = (deg) => {
+            if (!baseStampImage) return;
+            stampRotation = (stampRotation + deg + 360) % 360;
+            generateRotatedStamp();
+            renderOverlay();
+        };
+
+        function generateRotatedStamp() {
+            if (!baseStampImage) return;
+            let w = baseStampImage.width;
+            let h = baseStampImage.height;
+            if (stampRotation === 90 || stampRotation === 270) { [w, h] = [h, w]; }
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const cCtx = c.getContext('2d');
+            cCtx.imageSmoothingEnabled = false;
+            cCtx.translate(w / 2, h / 2);
+            cCtx.rotate(stampRotation * Math.PI / 180);
+            cCtx.drawImage(baseStampImage, -baseStampImage.width / 2, -baseStampImage.height / 2);
+            activeStampCanvas = c;
+        }
+
+        function renderSymbols() {
+            const grid = document.getElementById('symbolsGrid');
+            const msg = document.getElementById('emptySymbolsMsg');
+            grid.innerHTML = '';
+
+            if (symbols.length === 0) {
+                msg.classList.remove('hidden');
+            } else {
+                msg.classList.add('hidden');
+                symbols.forEach(sym => {
+                    const el = document.createElement('div');
+                    el.className = 'aspect-square bg-gray-700 rounded border border-gray-600 hover:border-indigo-500 relative group cursor-pointer checkboard';
+                    const img = document.createElement('img');
+                    img.src = sym.data;
+                    img.className = 'w-full h-full object-contain pixelated p-1';
+                    const delBtn = document.createElement('button');
+                    delBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
+                    delBtn.className = 'absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600';
+                    delBtn.onclick = (e) => { e.stopPropagation(); deleteSymbol(sym.id); };
+                    el.onclick = () => useSymbol(sym.id);
+                    el.appendChild(img);
+                    el.appendChild(delBtn);
+                    grid.appendChild(el);
+                });
+                lucide.createIcons();
+            }
+        }
+
+        // --- UI & Helpers ---
+        function setTool(tool) {
+            currentTool = tool;
+            if (tool === 'stamp') stampToolBtn.classList.remove('hidden');
+            if (tool !== 'select' && selection) anchorSelection(); // Anchor when switching away
+
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                if (btn.dataset.tool === tool) {
+                    btn.classList.add('bg-indigo-600', 'text-white');
+                    btn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                } else {
+                    btn.classList.remove('bg-indigo-600', 'text-white');
+                    btn.classList.add('text-gray-400', 'hover:bg-gray-700');
+                }
+            });
+            renderOverlay();
+        }
+
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => setTool(btn.dataset.tool));
+        });
+
+        function setColor(color) {
+            currentColor = color;
+            colorPicker.value = color;
+            currentColorDisplay.style.backgroundColor = color;
+            hexDisplay.innerText = color.toUpperCase();
+        }
+        colorPicker.addEventListener('input', (e) => setColor(e.target.value));
+        document.getElementById('gridToggle').addEventListener('change', (e) => { showGrid = e.target.checked; drawGrid(); });
+        document.getElementById('resizeBtn').addEventListener('click', () => {
+            const w = parseInt(document.getElementById('widthInput').value);
+            const h = parseInt(document.getElementById('heightInput').value);
+            if (w > 0 && h > 0) setupCanvas(w, h);
+        });
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            if (confirm("Clear canvas?")) {
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                saveHistory();
+                updatePreview();
+            }
+        });
+        window.setPreset = (w, h) => {
+            document.getElementById('widthInput').value = w;
+            document.getElementById('heightInput').value = h;
+            setupCanvas(w, h);
+        };
+        document.getElementById('zoomIn').addEventListener('click', () => { if (zoom < 50) { zoom += 1; updateZoom(); } });
+        document.getElementById('zoomOut').addEventListener('click', () => { if (zoom > 1) { zoom -= 1; updateZoom(); } });
+        window.exportImage = () => {
+            if (selection) anchorSelection();
+            const link = document.getElementById('downloadLink');
+            link.download = `pixel-art-${Date.now()}.png`;
+            link.href = mainCanvas.toDataURL('image/png');
+            link.click();
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+            if (e.key === 'p') setTool('pen');
+            if (e.key === 'e') setTool('eraser');
+            if (e.key === 'f') setTool('fill');
+            if (e.key === 'i') setTool('picker');
+            if (e.key === 's') setTool('select');
+            if (e.key === 'Escape') anchorSelection();
+            if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
+
+            if (currentTool === 'stamp' && baseStampImage) {
+                if (e.key === 'r' || e.key === 'R') {
+                    if (e.shiftKey) rotateStamp(-90); else rotateStamp(90);
+                }
+            }
+        });
+
+        init();
+
+    </script>
+</body>
+
+</html>
