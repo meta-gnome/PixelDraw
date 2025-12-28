@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+
+        /* Checkboard pattern for transparency */
+        .checkboard {
+            background-color: #ffffff;
+            background-image:
+                linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+                linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+                linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        /* Pixelated rendering for the canvas to keep edges sharp */
+        canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Animation for selection marquee */
+        @keyframes march {
+            0% {
+                line-dash-offset: 0;
+            }
+
+            100% {
+                line-dash-offset: 8;
+            }
+        }
+
+        /* Timeline Frame Styles */
+        .frame-thumb {
+            transition: all 0.2s;
+        }
+
+        .frame-thumb.active {
+            border-color: #6366f1;
+            /* Indigo-500 */
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5);
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white h-screen flex flex-col overflow-hidden font-sans select-none">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 h-14 flex items-center justify-between px-4 shrink-0 z-10">
+        <div class="flex items-center gap-2 w-1/3">
+            <i data-lucide="grid-3x3" class="text-indigo-400"></i>
+            <h1 class="font-bold text-lg tracking-wide hidden sm:block">Pixel<span class="text-indigo-400">Forge</span>
+            </h1>
+        </div>
+
+        <!-- Mode Switcher -->
+        <div class="flex bg-gray-900 rounded-lg p-1 border border-gray-700">
+            <button onclick="switchMode('design')" id="mode-btn-design"
+                class="px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all bg-indigo-600 text-white shadow-sm">
+                Design
+            </button>
+            <button onclick="switchMode('layout')" id="mode-btn-layout"
+                class="px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all text-gray-400 hover:text-white">
+                Layout
+            </button>
+        </div>
+
+        <div class="flex items-center justify-end gap-4 w-1/3">
+            <div
+                class="text-xs text-gray-400 flex items-center gap-2 bg-gray-900 px-3 py-1 rounded-full border border-gray-700 hidden sm:flex">
+                <span id="canvasSizeDisplay">16 x 16</span>
+            </div>
+            <button onclick="exportImage()"
+                class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                <i data-lucide="download" class="w-4 h-4"></i> <span class="hidden sm:inline">Export</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Toolbar (Tools) -->
+        <aside class="w-16 bg-gray-800 border-r border-gray-700 flex flex-col items-center py-4 gap-4 z-10 shrink-0">
+            <button class="tool-btn p-2 rounded-lg bg-indigo-600 text-white" data-tool="pen" title="Pencil (P)">
+                <i data-lucide="pencil" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="eraser"
+                title="Eraser (E)">
+                <i data-lucide="eraser" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="fill"
+                title="Fill Bucket (F)">
+                <i data-lucide="paint-bucket" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="select"
+                title="Select / Move (S)">
+                <i data-lucide="box-select" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white" data-tool="picker"
+                title="Color Picker (I)">
+                <i data-lucide="pipette" class="w-6 h-6"></i>
+            </button>
+            <button class="tool-btn p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white hidden"
+                id="stampToolBtn" data-tool="stamp" title="Stamp Tool">
+                <i data-lucide="stamp" class="w-6 h-6"></i>
+            </button>
+
+            <div class="w-8 h-px bg-gray-700 my-1"></div>
+
+            <button id="undoBtn" class="p-2 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white"
+                title="Undo (Ctrl+Z)">
+                <i data-lucide="undo-2" class="w-6 h-6"></i>
+            </button>
+            <button id="clearBtn" class="p-2 rounded-lg hover:bg-gray-700 text-red-400 hover:text-red-300"
+                title="Clear Canvas">
+                <i data-lucide="trash-2" class="w-6 h-6"></i>
+            </button>
+        </aside>
+
+        <!-- Center Canvas Area -->
+        <main class="flex-1 bg-gray-900 relative overflow-hidden flex flex-col" id="main-container">
+
+            <!-- Canvas Viewport -->
+            <div class="flex-1 relative overflow-auto flex items-center justify-center p-8 custom-scrollbar bg-gray-900/50"
+                id="canvas-viewport">
+
+                <!-- DESIGN MODE CANVAS WRAPPER -->
+                <div id="wrapper-design" class="relative shadow-2xl shadow-black mx-auto my-auto">
+                    <div class="absolute inset-0 checkboard pointer-events-none rounded-sm"></div>
+                    <canvas id="design-main" class="relative z-10 cursor-crosshair block bg-transparent"></canvas>
+                    <canvas id="design-grid" class="absolute inset-0 z-20 pointer-events-none opacity-50"></canvas>
+                    <canvas id="design-cursor" class="absolute inset-0 z-30 cursor-crosshair"></canvas>
+                </div>
+
+                <!-- LAYOUT MODE CANVAS WRAPPER (Hidden by default) -->
+                <div id="wrapper-layout" class="relative shadow-2xl shadow-black mx-auto my-auto hidden">
+                    <div class="absolute inset-0 checkboard pointer-events-none rounded-sm"></div>
+                    <canvas id="layout-main" class="relative z-10 cursor-crosshair block bg-transparent"></canvas>
+                    <canvas id="layout-grid" class="absolute inset-0 z-20 pointer-events-none opacity-50"></canvas>
+                    <canvas id="layout-cursor" class="absolute inset-0 z-30 cursor-crosshair"></canvas>
+                </div>
+
+                <!-- Zoom Controls Floating -->
+                <div
+                    class="absolute bottom-4 right-4 bg-gray-800 rounded-full px-4 py-2 flex items-center gap-4 shadow-lg border border-gray-700 z-40">
+                    <button id="zoomOut" class="hover:text-indigo-400"><i data-lucide="minus"
+                            class="w-4 h-4"></i></button>
+                    <span id="zoomLevel" class="text-sm font-mono text-gray-300 w-12 text-center">100%</span>
+                    <button id="zoomIn" class="hover:text-indigo-400"><i data-lucide="plus"
+                            class="w-4 h-4"></i></button>
+                </div>
+
+            </div>
+
+            <!-- Timeline Panel (Only Design Mode) -->
+            <div id="timeline-panel" class="h-28 bg-gray-800 border-t border-gray-700 flex flex-col shrink-0 z-20">
+                <!-- Timeline Controls -->
+                <div class="h-8 border-b border-gray-700 flex items-center px-2 gap-2 bg-gray-850">
+                    <button onclick="togglePlay()" id="playBtn"
+                        class="w-6 h-6 flex items-center justify-center hover:text-indigo-400 text-gray-300"
+                        title="Play/Stop (Space)">
+                        <i data-lucide="play" class="w-3 h-3 fill-current"></i>
+                    </button>
+                    <div class="h-4 w-px bg-gray-700 mx-1"></div>
+                    <button onclick="addFrame()"
+                        class="w-6 h-6 flex items-center justify-center hover:text-emerald-400 text-gray-300"
+                        title="New Frame (Alt+N)">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="duplicateFrame()"
+                        class="w-6 h-6 flex items-center justify-center hover:text-blue-400 text-gray-300"
+                        title="Duplicate Frame (Alt+D)">
+                        <i data-lucide="copy" class="w-3 h-3"></i>
+                    </button>
+                    <button onclick="deleteFrame()"
+                        class="w-6 h-6 flex items-center justify-center hover:text-red-400 text-gray-300"
+                        title="Delete Frame">
+                        <i data-lucide="trash" class="w-3 h-3"></i>
+                    </button>
+                    <div class="h-4 w-px bg-gray-700 mx-1"></div>
+                    <button onclick="toggleOnionSkin()" id="onionBtn"
+                        class="w-6 h-6 flex items-center justify-center hover:text-indigo-400 text-gray-500"
+                        title="Onion Skin">
+                        <i data-lucide="ghost" class="w-4 h-4"></i>
+                    </button>
+
+                    <div class="flex-1"></div>
+
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-gray-500 font-bold">FPS</span>
+                        <input type="range" id="fpsRange" min="1" max="24" value="12"
+                            class="w-16 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        <span id="fpsDisplay" class="text-[10px] w-4 text-right text-gray-400">12</span>
+                    </div>
+                </div>
+
+                <!-- Frames List -->
+                <div class="flex-1 overflow-x-auto overflow-y-hidden flex items-center px-2 gap-2 custom-scrollbar"
+                    id="frames-container">
+                    <!-- Frames injected here -->
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Right Sidebar (Properties, Colors, Symbols) -->
+        <aside class="w-72 bg-gray-800 border-l border-gray-700 flex flex-col z-10 shrink-0">
+
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-700">
+                <button
+                    class="flex-1 py-3 text-xs font-bold uppercase tracking-wide text-white border-b-2 border-indigo-500"
+                    id="tab-properties">Properties</button>
+                <button
+                    class="flex-1 py-3 text-xs font-bold uppercase tracking-wide text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-gray-600"
+                    id="tab-symbols">Symbols</button>
+            </div>
+
+            <!-- Properties Panel -->
+            <div id="panel-properties" class="flex-1 overflow-y-auto flex flex-col">
+                <!-- Color Picker -->
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Color Palette</h3>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="relative group">
+                            <input type="color" id="colorPicker" value="#000000"
+                                class="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10">
+                            <div id="currentColorDisplay"
+                                class="w-10 h-10 rounded-md bg-black border border-gray-600 shadow-inner group-hover:border-white transition-colors">
+                            </div>
+                        </div>
+                        <div class="text-xs text-gray-400 font-mono flex-1">
+                            <span id="hexDisplay">#000000</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-6 gap-2" id="paletteGrid"></div>
+                </div>
+
+                <!-- Canvas Settings -->
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Canvas Size</h3>
+
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-xs text-gray-500">Width</label>
+                                <input type="number" id="widthInput" value="16" min="4" max="640"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 text-center">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">Height</label>
+                                <input type="number" id="heightInput" value="16" min="4" max="640"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 text-center">
+                            </div>
+                        </div>
+
+                        <!-- Presets -->
+                        <div class="space-y-2">
+                            <p class="text-[10px] text-gray-500 uppercase font-bold">Sprites</p>
+                            <div class="flex gap-2">
+                                <button onclick="setPreset(16, 16)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">16x16</button>
+                                <button onclick="setPreset(32, 32)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">32x32</button>
+                                <button onclick="setPreset(64, 64)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors">64x64</button>
+                            </div>
+
+                            <p class="text-[10px] text-gray-500 uppercase font-bold mt-2">Layouts</p>
+                            <div class="flex gap-2">
+                                <button onclick="setPreset(320, 180)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors"
+                                    title="Low Res 16:9">320x180</button>
+                                <button onclick="setPreset(640, 360)"
+                                    class="flex-1 bg-gray-700 hover:bg-gray-600 py-1 text-xs rounded transition-colors"
+                                    title="Medium Res 16:9">640x360</button>
+                            </div>
+                        </div>
+
+                        <button id="resizeBtn"
+                            class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors mt-2">Create
+                            New Canvas</button>
+                    </div>
+                </div>
+
+                <!-- Tools Options -->
+                <div class="p-4 flex-1">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Options</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Show Grid</span>
+                            <input type="checkbox" id="gridToggle" checked class="accent-indigo-500">
+                        </label>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Mirror X</span>
+                            <input type="checkbox" id="mirrorX" class="accent-indigo-500">
+                        </label>
+                        <label class="flex items-center justify-between cursor-pointer group">
+                            <span class="text-sm text-gray-300 group-hover:text-white">Mirror Y</span>
+                            <input type="checkbox" id="mirrorY" class="accent-indigo-500">
+                        </label>
+
+                        <!-- Snap To Grid Options -->
+                        <div class="pt-2 mt-2 border-t border-gray-700">
+                            <label class="flex items-center justify-between cursor-pointer group mb-2">
+                                <span class="text-sm text-gray-300 group-hover:text-white flex items-center gap-1"><i
+                                        data-lucide="magnet" class="w-3 h-3"></i> Snap to Grid</span>
+                                <input type="checkbox" id="snapToggle" class="accent-indigo-500">
+                            </label>
+
+                            <div id="snapSettings"
+                                class="grid grid-cols-2 gap-2 transition-all opacity-50 pointer-events-none">
+                                <div>
+                                    <label class="text-[10px] text-gray-500 uppercase block mb-1">Snap X</label>
+                                    <input type="number" id="snapX" value="16" min="1"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-center focus:border-indigo-500 outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-gray-500 uppercase block mb-1">Snap Y</label>
+                                    <input type="number" id="snapY" value="16" min="1"
+                                        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-center focus:border-indigo-500 outline-none">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Symbols Panel (Hidden by default) -->
+            <div id="panel-symbols" class="flex-1 overflow-y-auto flex flex-col hidden bg-gray-850">
+                <div class="p-4 border-b border-gray-700 bg-gray-800">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Symbol Library</h3>
+
+                    <div class="flex gap-2 mb-3">
+                        <button onclick="saveToLibrary()"
+                            class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="save" class="w-3 h-3"></i> Save <span id="saveBtnText">Symbol</span>
+                        </button>
+                    </div>
+
+                    <!-- Rotation Controls -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="rotateStamp(-90)"
+                            class="bg-gray-700 hover:bg-gray-600 py-1.5 rounded text-xs text-gray-300 hover:text-white transition-colors flex items-center justify-center gap-1"
+                            title="Rotate Left (Shift+R)">
+                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Left
+                        </button>
+                        <button onclick="rotateStamp(90)"
+                            class="bg-gray-700 hover:bg-gray-600 py-1.5 rounded text-xs text-gray-300 hover:text-white transition-colors flex items-center justify-center gap-1"
+                            title="Rotate Right (R)">
+                            <i data-lucide="rotate-cw" class="w-3 h-3"></i> Right
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-2 flex-1 overflow-y-auto">
+                    <div id="symbolsGrid" class="grid grid-cols-3 gap-2">
+                        <!-- Symbols injected here -->
+                    </div>
+                    <div id="emptySymbolsMsg" class="text-center py-8 text-gray-600 text-sm">
+                        No saved symbols yet.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview (Fixed at bottom) -->
+            <div class="p-4 bg-gray-900 border-t border-gray-700 shrink-0">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mini Preview</h3>
+                <div
+                    class="flex justify-center bg-gray-800 p-2 rounded border border-gray-700 checkboard relative overflow-hidden h-32 flex items-center">
+                    <!-- Added w-full h-full object-contain to force scaling of tiny canvases -->
+                    <canvas id="previewCanvas" class="w-full h-full object-contain mx-auto"
+                        style="image-rendering: pixelated;"></canvas>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+
+    <!-- Hidden download link -->
+    <a id="downloadLink" style="display:none"></a>
+
+    <script>
+        // --- Global Config ---
+        let currentMode = 'design';
+
+        // --- Mode State Storage ---
+        const modes = {
+            design: {
+                width: 16,
+                height: 16,
+                zoom: 20,
+                history: [],
+                historyStep: -1,
+                // Animation State
+                frames: [],
+                currentFrameIndex: 0,
+                onionSkin: false,
+                elements: {
+                    main: document.getElementById('design-main'),
+                    grid: document.getElementById('design-grid'),
+                    cursor: document.getElementById('design-cursor'),
+                    wrapper: document.getElementById('wrapper-design'),
+                    btn: document.getElementById('mode-btn-design')
+                },
+                ctx: { main: null, grid: null, cursor: null }
+            },
+            layout: {
+                width: 320,
+                height: 180,
+                zoom: 3,
+                history: [],
+                historyStep: -1,
+                frames: [],
+                currentFrameIndex: 0,
+                onionSkin: false,
+                elements: {
+                    main: document.getElementById('layout-main'),
+                    grid: document.getElementById('layout-grid'),
+                    cursor: document.getElementById('layout-cursor'),
+                    wrapper: document.getElementById('wrapper-layout'),
+                    btn: document.getElementById('mode-btn-layout')
+                },
+                ctx: { main: null, grid: null, cursor: null }
+            }
+        };
+
+        // --- Active "Pointers" ---
+        let mainCanvas, gridCanvas, cursorCanvas;
+        let ctx, gridCtx, cursorCtx;
+        let canvasWidth, canvasHeight, zoom;
+        let history, historyStep;
+
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d');
+
+        // Tool State
+        let currentTool = 'pen';
+        let currentColor = '#000000';
+        let isDrawing = false;
+        let showGrid = true;
+
+        // Animation State
+        let isPlaying = false;
+        let playInterval = null;
+        let fps = 12;
+
+        // Stamp / Symbols State
+        let baseStampImage = null;
+        let activeStampCanvas = null;
+        let stampRotation = 0;
+        let symbols = [];
+
+        // Selection State
+        let selection = null;
+        let selectionDragStart = null;
+        let isSelecting = false;
+        let isMovingSelection = false;
+
+        // Overlay Mouse Pos
+        let mousePos = { x: -1, y: -1 };
+
+        // DOM UI Elements
+        const undoBtn = document.getElementById('undoBtn');
+        const colorPicker = document.getElementById('colorPicker');
+        const hexDisplay = document.getElementById('hexDisplay');
+        const currentColorDisplay = document.getElementById('currentColorDisplay');
+        const stampToolBtn = document.getElementById('stampToolBtn');
+        const saveBtnText = document.getElementById('saveBtnText');
+        const snapToggle = document.getElementById('snapToggle');
+        const snapSettings = document.getElementById('snapSettings');
+        const snapXInput = document.getElementById('snapX');
+        const snapYInput = document.getElementById('snapY');
+
+        // Animation DOM
+        const timelinePanel = document.getElementById('timeline-panel');
+        const framesContainer = document.getElementById('frames-container');
+        const fpsRange = document.getElementById('fpsRange');
+        const fpsDisplay = document.getElementById('fpsDisplay');
+        const onionBtn = document.getElementById('onionBtn');
+        const playBtn = document.getElementById('playBtn');
+
+        // --- Snap Logic ---
+        function getSnapPos(x, y) {
+            if (!snapToggle.checked) return { x, y };
+            const sx = parseInt(snapXInput.value) || 16;
+            const sy = parseInt(snapYInput.value) || 16;
+            return { x: Math.floor(x / sx) * sx, y: Math.floor(y / sy) * sy };
+        }
+
+        snapToggle.addEventListener('change', (e) => {
+            if (e.target.checked) snapSettings.classList.remove('opacity-50', 'pointer-events-none');
+            else snapSettings.classList.add('opacity-50', 'pointer-events-none');
+        });
+
+        // --- Initialization ---
+
+        function init() {
+            lucide.createIcons();
+            loadSymbols();
+
+            ['design', 'layout'].forEach(m => {
+                const mode = modes[m];
+                mode.ctx.main = mode.elements.main.getContext('2d', { willReadFrequently: true });
+                mode.ctx.grid = mode.elements.grid.getContext('2d');
+                mode.ctx.cursor = mode.elements.cursor.getContext('2d');
+                mode.elements.main.width = mode.width;
+                mode.elements.main.height = mode.height;
+                mode.ctx.main.clearRect(0, 0, mode.width, mode.height);
+
+                // Init with 1 frame
+                const initImg = new Image();
+                initImg.src = mode.elements.main.toDataURL();
+                mode.frames = [initImg];
+
+                // History
+                mode.history.push(mode.elements.main.toDataURL());
+                mode.historyStep = 0;
+
+                attachListeners(mode.elements.cursor);
+            });
+
+            // Palette Init
+            const palette = [
+                '#000000', '#1a1c2c', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764',
+                '#257179', '#29366f', '#3b5dc9', '#41a6f6', '#73eff7', '#f4f4f4', '#94b0c2', '#566c86', '#333c57',
+                '#ffffff', '#9badb7', '#847e87', '#696a6a', '#595652', '#76428a', '#ac3232', '#d95763', '#d77bba'
+            ];
+            const paletteGrid = document.getElementById('paletteGrid');
+            palette.forEach(color => {
+                const btn = document.createElement('div');
+                btn.className = 'w-6 h-6 rounded border border-gray-600 cursor-pointer hover:border-white transition-colors';
+                btn.style.backgroundColor = color;
+                btn.onclick = () => setColor(color);
+                paletteGrid.appendChild(btn);
+            });
+
+            setupTabs();
+            switchMode('design');
+        }
+
+        // --- Mode Switching ---
+
+        window.switchMode = (modeName) => {
+            if (modes[currentMode] && history) {
+                // Save current state
+                modes[currentMode].zoom = zoom;
+                modes[currentMode].width = canvasWidth;
+                modes[currentMode].height = canvasHeight;
+                modes[currentMode].history = history;
+                modes[currentMode].historyStep = historyStep;
+                modes[currentMode].elements.wrapper.classList.add('hidden');
+                modes[currentMode].elements.btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
+                modes[currentMode].elements.btn.classList.add('text-gray-400', 'hover:text-white');
+
+                // Stop playback if leaving
+                if (isPlaying) togglePlay();
+            }
+
+            if (selection) anchorSelection();
+            selection = null; isSelecting = false; isMovingSelection = false;
+
+            currentMode = modeName;
+            const m = modes[modeName];
+
+            if (currentMode === 'design') {
+                timelinePanel.classList.remove('hidden');
+            } else {
+                timelinePanel.classList.add('hidden');
+            }
+
+            m.elements.wrapper.classList.remove('hidden');
+            m.elements.btn.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
+            m.elements.btn.classList.remove('text-gray-400', 'hover:text-white');
+
+            mainCanvas = m.elements.main;
+            gridCanvas = m.elements.grid;
+            cursorCanvas = m.elements.cursor;
+            ctx = m.ctx.main;
+            gridCtx = m.ctx.grid;
+            cursorCtx = m.ctx.cursor;
+            canvasWidth = m.width;
+            canvasHeight = m.height;
+            zoom = m.zoom;
+            history = m.history;
+            historyStep = m.historyStep;
+
+            document.getElementById('widthInput').value = canvasWidth;
+            document.getElementById('heightInput').value = canvasHeight;
+            document.getElementById('canvasSizeDisplay').innerText = `${canvasWidth} x ${canvasHeight}`;
+
+            updateUndoBtn();
+            updateZoom();
+            renderTimeline();
+            updateOnionBtn();
+            updatePreview();
+        };
+
+        function setupCanvas(w, h) {
+            canvasWidth = w;
+            canvasHeight = h;
+            mainCanvas.width = w;
+            mainCanvas.height = h;
+            previewCanvas.width = w;
+            previewCanvas.height = h;
+            modes[currentMode].width = w;
+            modes[currentMode].height = h;
+
+            ctx.clearRect(0, 0, w, h);
+
+            const blankImg = new Image();
+            blankImg.src = mainCanvas.toDataURL();
+            modes[currentMode].frames = [blankImg];
+            modes[currentMode].currentFrameIndex = 0;
+
+            history = [mainCanvas.toDataURL()];
+            modes[currentMode].history = history;
+            historyStep = 0;
+
+            updateUndoBtn();
+            document.getElementById('canvasSizeDisplay').innerText = `${w} x ${h}`;
+            if (w > 200 || h > 200) zoom = 3; else if (w > 64) zoom = 8; else zoom = 20;
+            updateZoom();
+            renderTimeline();
+        }
+
+        // --- Animation Logic ---
+
+        function updateCurrentFrameData() {
+            const m = modes[currentMode];
+            const img = new Image();
+            img.src = mainCanvas.toDataURL();
+            m.frames[m.currentFrameIndex] = img;
+            renderTimeline();
+        }
+
+        function loadFrame(index) {
+            if (selection) anchorSelection();
+            const m = modes[currentMode];
+            if (index < 0 || index >= m.frames.length) return;
+
+            m.currentFrameIndex = index;
+            const img = m.frames[index];
+
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            ctx.drawImage(img, 0, 0);
+
+            // Reset history for new frame (simplified)
+            history = [mainCanvas.toDataURL()];
+            modes[currentMode].history = history;
+            historyStep = 0;
+            updateUndoBtn();
+
+            renderTimeline();
+            updatePreview();
+        }
+
+        window.addFrame = () => {
+            const m = modes[currentMode];
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+            const blankImg = new Image();
+            blankImg.src = mainCanvas.toDataURL();
+
+            m.frames.splice(m.currentFrameIndex + 1, 0, blankImg);
+            loadFrame(m.currentFrameIndex + 1);
+        };
+
+        window.duplicateFrame = () => {
+            const m = modes[currentMode];
+            const dupImg = new Image();
+            dupImg.src = mainCanvas.toDataURL();
+
+            m.frames.splice(m.currentFrameIndex + 1, 0, dupImg);
+            loadFrame(m.currentFrameIndex + 1);
+        };
+
+        window.deleteFrame = () => {
+            const m = modes[currentMode];
+            if (m.frames.length <= 1) return;
+
+            m.frames.splice(m.currentFrameIndex, 1);
+            const newIndex = Math.max(0, m.currentFrameIndex - 1);
+            loadFrame(newIndex);
+        };
+
+        window.toggleOnionSkin = () => {
+            const m = modes[currentMode];
+            m.onionSkin = !m.onionSkin;
+            updateOnionBtn();
+            renderOverlay();
+        };
+
+        function updateOnionBtn() {
+            const m = modes[currentMode];
+            if (m.onionSkin) {
+                onionBtn.classList.add('text-indigo-400');
+                onionBtn.classList.remove('text-gray-500');
+            } else {
+                onionBtn.classList.remove('text-indigo-400');
+                onionBtn.classList.add('text-gray-500');
+            }
+        }
+
+        function renderTimeline() {
+            if (currentMode !== 'design') return;
+            const m = modes[currentMode];
+            framesContainer.innerHTML = '';
+
+            m.frames.forEach((frame, idx) => {
+                const btn = document.createElement('div');
+                btn.className = `frame-thumb w-12 h-12 shrink-0 bg-gray-700 border border-gray-600 rounded cursor-pointer relative overflow-hidden checkboard ${idx === m.currentFrameIndex ? 'active' : 'hover:border-gray-500'}`;
+
+                const img = document.createElement('img');
+                img.src = frame.src;
+                img.className = 'w-full h-full object-contain pixelated';
+
+                const badge = document.createElement('div');
+                badge.className = 'absolute bottom-0 right-0 bg-gray-900/80 text-[8px] px-1 text-gray-300';
+                badge.innerText = idx + 1;
+
+                btn.appendChild(img);
+                btn.appendChild(badge);
+                btn.onclick = () => loadFrame(idx);
+                framesContainer.appendChild(btn);
+            });
+        }
+
+        // --- Playback ---
+
+        window.togglePlay = () => {
+            if (isPlaying) {
+                clearInterval(playInterval);
+                isPlaying = false;
+                playBtn.innerHTML = '<i data-lucide="play" class="w-3 h-3 fill-current"></i>';
+                updatePreview(); // Return to current static frame
+            } else {
+                // Ensure current frame is saved before playing
+                updateCurrentFrameData();
+
+                isPlaying = true;
+                playBtn.innerHTML = '<i data-lucide="square" class="w-3 h-3 fill-current"></i>'; // Stop icon
+
+                let playIndex = 0;
+                const m = modes[currentMode];
+
+                // Explicitly sync preview size
+                previewCanvas.width = canvasWidth;
+                previewCanvas.height = canvasHeight;
+
+                playInterval = setInterval(() => {
+                    const img = m.frames[playIndex];
+                    // Ensure context is valid and image is ready
+                    if (previewCtx && img && img.complete && img.naturalWidth !== 0) {
+                        previewCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+                        previewCtx.drawImage(img, 0, 0);
+                    }
+                    playIndex = (playIndex + 1) % m.frames.length;
+                }, 1000 / parseInt(fps));
+            }
+            lucide.createIcons();
+        };
+
+        fpsRange.addEventListener('input', (e) => {
+            fps = parseInt(e.target.value);
+            fpsDisplay.innerText = fps;
+            if (isPlaying) {
+                togglePlay();
+                togglePlay();
+            }
+        });
+
+        // --- Drawing & Rendering Logic ---
+
+        function updateZoom() {
+            const displayW = canvasWidth * zoom;
+            const displayH = canvasHeight * zoom;
+            mainCanvas.style.width = `${displayW}px`;
+            mainCanvas.style.height = `${displayH}px`;
+            gridCanvas.width = displayW;
+            gridCanvas.height = displayH;
+            cursorCanvas.width = displayW;
+            cursorCanvas.height = displayH;
+            document.getElementById('zoomLevel').innerText = Math.round((zoom / 20) * 100) + '%';
+            drawGrid();
+            renderOverlay();
+        }
+
+        function drawGrid() {
+            gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+            if (!showGrid || zoom < 4) return;
+            gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            gridCtx.lineWidth = 1;
+            gridCtx.beginPath();
+            for (let x = 0; x <= canvasWidth; x++) {
+                gridCtx.moveTo(Math.floor(x * zoom), 0);
+                gridCtx.lineTo(Math.floor(x * zoom), gridCanvas.height);
+            }
+            for (let y = 0; y <= canvasHeight; y++) {
+                gridCtx.moveTo(0, Math.floor(y * zoom));
+                gridCtx.lineTo(gridCanvas.width, Math.floor(y * zoom));
+            }
+            gridCtx.stroke();
+        }
+
+        function updatePreview() {
+            if (!isPlaying) {
+                previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                previewCanvas.width = canvasWidth;
+                previewCanvas.height = canvasHeight;
+                previewCtx.drawImage(mainCanvas, 0, 0);
+            }
+        }
+
+        function getPixelCoords(e, element) {
+            const rect = element.getBoundingClientRect();
+            const scaleX = rect.width / canvasWidth;
+            const scaleY = rect.height / canvasHeight;
+            const x = Math.floor((e.clientX - rect.left) / scaleX);
+            const y = Math.floor((e.clientY - rect.top) / scaleY);
+            return { x, y };
+        }
+
+        // --- Render Overlay (Cursor + Selection + Onion Skin) ---
+
+        function renderOverlay() {
+            cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+            const m = modes[currentMode];
+
+            // 1. Onion Skin
+            if (m.onionSkin && m.currentFrameIndex > 0) {
+                const prevFrame = m.frames[m.currentFrameIndex - 1];
+                if (prevFrame) {
+                    cursorCtx.save();
+                    cursorCtx.globalAlpha = 0.3;
+                    cursorCtx.imageSmoothingEnabled = false;
+                    cursorCtx.drawImage(
+                        prevFrame,
+                        0, 0, canvasWidth, canvasHeight,
+                        0, 0, canvasWidth * zoom, canvasHeight * zoom
+                    );
+                    cursorCtx.restore();
+                }
+            }
+
+            // 2. Selection
+            if (selection) {
+                if (selection.isFloating && selection.content) {
+                    cursorCtx.imageSmoothingEnabled = false;
+                    cursorCtx.drawImage(
+                        selection.content,
+                        selection.x * zoom,
+                        selection.y * zoom,
+                        selection.w * zoom,
+                        selection.h * zoom
+                    );
+                }
+
+                cursorCtx.strokeStyle = '#fff';
+                cursorCtx.lineWidth = 1;
+                cursorCtx.setLineDash([4, 4]);
+                cursorCtx.strokeRect(selection.x * zoom, selection.y * zoom, selection.w * zoom, selection.h * zoom);
+                cursorCtx.strokeStyle = '#000';
+                cursorCtx.lineDashOffset = 4;
+                cursorCtx.strokeRect(selection.x * zoom, selection.y * zoom, selection.w * zoom, selection.h * zoom);
+                cursorCtx.setLineDash([]);
+            }
+
+            // 3. Tool Cursor
+            if (mousePos.x >= 0 && !isSelecting && !isMovingSelection) {
+                let x = mousePos.x;
+                let y = mousePos.y;
+
+                if (currentTool === 'stamp' && activeStampCanvas) {
+                    let drawX, drawY;
+                    if (snapToggle.checked) {
+                        const offsetX = Math.floor(activeStampCanvas.width / 2);
+                        const offsetY = Math.floor(activeStampCanvas.height / 2);
+                        const snapped = getSnapPos(x - offsetX, y - offsetY);
+                        drawX = snapped.x; drawY = snapped.y;
+                    } else {
+                        const offsetX = Math.floor(activeStampCanvas.width / 2);
+                        const offsetY = Math.floor(activeStampCanvas.height / 2);
+                        drawX = x - offsetX; drawY = y - offsetY;
+                    }
+
+                    cursorCtx.globalAlpha = 0.5;
+                    cursorCtx.imageSmoothingEnabled = false;
+                    cursorCtx.drawImage(
+                        activeStampCanvas,
+                        drawX * zoom, drawY * zoom,
+                        activeStampCanvas.width * zoom, activeStampCanvas.height * zoom
+                    );
+                    cursorCtx.globalAlpha = 1.0;
+                    cursorCtx.strokeStyle = '#6366f1';
+                    cursorCtx.strokeRect(drawX * zoom, drawY * zoom, activeStampCanvas.width * zoom, activeStampCanvas.height * zoom);
+                } else if (currentTool !== 'select') {
+                    cursorCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                    cursorCtx.lineWidth = 2;
+                    cursorCtx.strokeRect(x * zoom, y * zoom, zoom, zoom);
+                }
+            }
+        }
+
+        // --- Interaction Handlers ---
+
+        function putPixel(x, y, color) {
+            if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) return;
+            ctx.fillStyle = color;
+            ctx.clearRect(x, y, 1, 1);
+            if (color !== 'transparent') ctx.fillRect(x, y, 1, 1);
+        }
+
+        function handleDraw(x, y) {
+            if (currentTool === 'select') return;
+
+            if (currentTool === 'stamp' && activeStampCanvas) {
+                let drawX, drawY;
+                if (snapToggle.checked) {
+                    const offsetX = Math.floor(activeStampCanvas.width / 2);
+                    const offsetY = Math.floor(activeStampCanvas.height / 2);
+                    const snapped = getSnapPos(x - offsetX, y - offsetY);
+                    drawX = snapped.x; drawY = snapped.y;
+                } else {
+                    const offsetX = Math.floor(activeStampCanvas.width / 2);
+                    const offsetY = Math.floor(activeStampCanvas.height / 2);
+                    drawX = x - offsetX; drawY = y - offsetY;
+                }
+                ctx.drawImage(activeStampCanvas, drawX, drawY);
+                updatePreview();
+                return;
+            }
+
+            const mirrorX = document.getElementById('mirrorX').checked;
+            const mirrorY = document.getElementById('mirrorY').checked;
+            const drawOp = (tx, ty) => {
+                if (currentTool === 'pen') putPixel(tx, ty, currentColor);
+                else if (currentTool === 'eraser') ctx.clearRect(tx, ty, 1, 1);
+            };
+
+            drawOp(x, y);
+            if (mirrorX) drawOp(canvasWidth - 1 - x, y);
+            if (mirrorY) drawOp(x, canvasHeight - 1 - y);
+            if (mirrorX && mirrorY) drawOp(canvasWidth - 1 - x, canvasHeight - 1 - y);
+            updatePreview();
+        }
+
+        function floodFill(startX, startY, fillColor) {
+            const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+            const pixelData = imgData.data;
+            const getColorAt = (x, y) => {
+                if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) return -1;
+                const i = (y * canvasWidth + x) * 4;
+                return (pixelData[i] << 24) | (pixelData[i + 1] << 16) | (pixelData[i + 2] << 8) | pixelData[i + 3];
+            };
+            const r = parseInt(fillColor.slice(1, 3), 16);
+            const g = parseInt(fillColor.slice(3, 5), 16);
+            const b = parseInt(fillColor.slice(5, 7), 16);
+            const targetColorInt = (r << 24) | (g << 16) | (b << 8) | 255;
+            const startColorInt = getColorAt(startX, startY);
+            if (startColorInt === targetColorInt) return;
+
+            const stack = [[startX, startY]];
+            while (stack.length) {
+                const [x, y] = stack.pop();
+                const currColor = getColorAt(x, y);
+                if (currColor === startColorInt) {
+                    const i = (y * canvasWidth + x) * 4;
+                    pixelData[i] = r; pixelData[i + 1] = g; pixelData[i + 2] = b; pixelData[i + 3] = 255;
+                    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+            updatePreview();
+            saveHistory();
+        }
+
+        function pickColor(x, y) {
+            const p = ctx.getImageData(x, y, 1, 1).data;
+            if (p[3] === 0) return;
+            const hex = "#" + ("0" + p[0].toString(16)).slice(-2) + ("0" + p[1].toString(16)).slice(-2) + ("0" + p[2].toString(16)).slice(-2);
+            setColor(hex);
+            setTool('pen');
+        }
+
+        // --- Listeners ---
+
+        function attachListeners(targetCanvas) {
+            const startDrawing = (e) => {
+                const { x, y } = getPixelCoords(e, targetCanvas);
+                mousePos = { x, y };
+
+                if (currentTool === 'select') {
+                    if (selection) {
+                        if (x >= selection.x && x < selection.x + selection.w &&
+                            y >= selection.y && y < selection.y + selection.h) {
+                            if (!selection.isFloating) liftSelection();
+                            isMovingSelection = true;
+                            selectionDragStart = { x: x - selection.x, y: y - selection.y };
+                            return;
+                        } else {
+                            anchorSelection();
+                        }
+                    }
+                    isSelecting = true;
+                    const start = getSnapPos(x, y);
+                    selectionDragStart = { x: start.x, y: start.y };
+                    selection = { x: start.x, y: start.y, w: 0, h: 0, isFloating: false, content: null };
+                    saveBtnText.innerText = "Group";
+                    renderOverlay();
+                    return;
+                }
+
+                if (selection) anchorSelection();
+                if (currentTool === 'fill') { floodFill(x, y, currentColor); updateCurrentFrameData(); return; }
+                if (currentTool === 'picker') { pickColor(x, y); return; }
+
+                isDrawing = true;
+                handleDraw(x, y);
+            };
+
+            const moveDrawing = (e) => {
+                const { x, y } = getPixelCoords(e, targetCanvas);
+                mousePos = { x, y };
+
+                if (currentTool === 'select') {
+                    if (isSelecting) {
+                        const start = selectionDragStart;
+                        const end = getSnapPos(x, y);
+                        const x1 = Math.min(start.x, end.x);
+                        const y1 = Math.min(start.y, end.y);
+                        const snapX = parseInt(snapXInput.value) || 1;
+                        const snapY = parseInt(snapYInput.value) || 1;
+                        let w = Math.abs(end.x - start.x);
+                        let h = Math.abs(end.y - start.y);
+
+                        if (w === 0 && snapToggle.checked) w = snapX;
+                        if (h === 0 && snapToggle.checked) h = snapY;
+                        if (w === 0) w = 1;
+                        if (h === 0) h = 1;
+
+                        selection.x = x1; selection.y = y1; selection.w = w; selection.h = h;
+                        renderOverlay();
+                    } else if (isMovingSelection) {
+                        const rawX = x - selectionDragStart.x;
+                        const rawY = y - selectionDragStart.y;
+                        const snapped = getSnapPos(rawX, rawY);
+                        selection.x = snapped.x; selection.y = snapped.y;
+                        renderOverlay();
+                    } else {
+                        renderOverlay();
+                    }
+                    return;
+                }
+
+                renderOverlay();
+                if (!isDrawing) return;
+                handleDraw(x, y);
+            };
+
+            const endDrawing = () => {
+                if (isSelecting) {
+                    isSelecting = false;
+                    if (selection.w <= 0 || selection.h <= 0) selection = null;
+                }
+                if (isMovingSelection) isMovingSelection = false;
+                if (isDrawing) {
+                    isDrawing = false;
+                    saveHistory();
+                }
+                updateCurrentFrameData();
+            };
+
+            targetCanvas.addEventListener('mousedown', startDrawing);
+            targetCanvas.addEventListener('mousemove', moveDrawing);
+            targetCanvas.addEventListener('mouseleave', () => { mousePos = { x: -1, y: -1 }; renderOverlay(); });
+            targetCanvas.addEventListener('mouseup', endDrawing);
+
+            targetCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e.touches[0]); }, { passive: false });
+            targetCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDrawing(e.touches[0]); }, { passive: false });
+            targetCanvas.addEventListener('touchend', endDrawing);
+        }
+
+        // --- Standard Logic (History, Symbols, etc) ---
+        function saveHistory() {
+            historyStep++;
+            if (historyStep < history.length) { history.length = historyStep; }
+            history.push(mainCanvas.toDataURL());
+            if (history.length > 20) { history.shift(); historyStep--; }
+            updateUndoBtn();
+        }
+
+        function undo() {
+            if (selection) anchorSelection();
+            if (historyStep > 0) {
+                historyStep--;
+                const img = new Image();
+                img.src = history[historyStep];
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                    ctx.drawImage(img, 0, 0);
+                    updateCurrentFrameData();
+                    updatePreview();
+                };
+            }
+            updateUndoBtn();
+        }
+
+        function updateUndoBtn() { undoBtn.style.opacity = historyStep > 0 ? 1 : 0.5; }
+        undoBtn.addEventListener('click', undo);
+
+        // --- Helpers ---
+        function anchorSelection() {
+            if (!selection) return;
+            if (selection.isFloating && selection.content) {
+                ctx.drawImage(selection.content, selection.x, selection.y);
+                saveHistory();
+                updateCurrentFrameData();
+                updatePreview();
+            }
+            selection = null;
+            saveBtnText.innerText = "Symbol";
+            renderOverlay();
+        }
+        function liftSelection() {
+            if (!selection || selection.isFloating) return;
+            const tempC = document.createElement('canvas');
+            tempC.width = selection.w; tempC.height = selection.h;
+            const tempCtx = tempC.getContext('2d');
+            tempCtx.drawImage(mainCanvas, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+            ctx.clearRect(selection.x, selection.y, selection.w, selection.h);
+            selection.content = tempC; selection.isFloating = true;
+            updatePreview();
+        }
+        function deleteSelection() {
+            if (!selection) return;
+            if (!selection.isFloating) {
+                ctx.clearRect(selection.x, selection.y, selection.w, selection.h);
+                saveHistory();
+                updateCurrentFrameData();
+            }
+            selection = null;
+            updatePreview(); renderOverlay(); saveBtnText.innerText = "Symbol";
+        }
+
+        function saveToLibrary() {
+            let dataUrl, width, height;
+            if (selection && selection.isFloating && selection.content) {
+                dataUrl = selection.content.toDataURL();
+                width = selection.w; height = selection.h;
+            } else if (selection) {
+                const tempC = document.createElement('canvas'); tempC.width = selection.w; tempC.height = selection.h;
+                tempC.getContext('2d').drawImage(mainCanvas, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+                dataUrl = tempC.toDataURL(); width = selection.w; height = selection.h;
+            } else {
+                dataUrl = mainCanvas.toDataURL(); width = canvasWidth; height = canvasHeight;
+            }
+            const symbol = { id: Date.now(), data: dataUrl, width, height };
+            symbols.push(symbol);
+            localStorage.setItem('pixel_forge_symbols', JSON.stringify(symbols));
+            renderSymbols();
+            const tab = document.getElementById('tab-symbols');
+            tab.classList.add('text-indigo-400');
+            setTimeout(() => tab.classList.remove('text-indigo-400'), 200);
+        }
+
+        function loadSymbols() {
+            const stored = localStorage.getItem('pixel_forge_symbols');
+            if (stored) { symbols = JSON.parse(stored); renderSymbols(); }
+        }
+
+        function deleteSymbol(id) {
+            if (confirm("Delete this symbol?")) {
+                symbols = symbols.filter(s => s.id !== id);
+                localStorage.setItem('pixel_forge_symbols', JSON.stringify(symbols));
+                renderSymbols();
+                if (currentTool === 'stamp') setTool('pen');
+            }
+        }
+
+        function useSymbol(symbolId) {
+            if (selection) anchorSelection();
+            const sym = symbols.find(s => s.id === symbolId);
+            if (!sym) return;
+            const img = new Image();
+            img.src = sym.data;
+            img.onload = () => {
+                baseStampImage = img;
+                stampRotation = 0;
+                generateRotatedStamp();
+                setTool('stamp');
+            };
+        }
+
+        window.rotateStamp = (deg) => {
+            if (!baseStampImage) return;
+            stampRotation = (stampRotation + deg + 360) % 360;
+            generateRotatedStamp();
+            renderOverlay();
+        };
+
+        function generateRotatedStamp() {
+            if (!baseStampImage) return;
+            let w = baseStampImage.width; let h = baseStampImage.height;
+            if (stampRotation === 90 || stampRotation === 270) { [w, h] = [h, w]; }
+            const c = document.createElement('canvas'); c.width = w; c.height = h;
+            const cCtx = c.getContext('2d');
+            cCtx.imageSmoothingEnabled = false;
+            cCtx.translate(w / 2, h / 2);
+            cCtx.rotate(stampRotation * Math.PI / 180);
+            cCtx.drawImage(baseStampImage, -baseStampImage.width / 2, -baseStampImage.height / 2);
+            activeStampCanvas = c;
+        }
+
+        function renderSymbols() {
+            const grid = document.getElementById('symbolsGrid');
+            const msg = document.getElementById('emptySymbolsMsg');
+            grid.innerHTML = '';
+            if (symbols.length === 0) {
+                msg.classList.remove('hidden');
+            } else {
+                msg.classList.add('hidden');
+                symbols.forEach(sym => {
+                    const el = document.createElement('div');
+                    el.className = 'aspect-square bg-gray-700 rounded border border-gray-600 hover:border-indigo-500 relative group cursor-pointer checkboard';
+                    const img = document.createElement('img'); img.src = sym.data; img.className = 'w-full h-full object-contain pixelated p-1';
+                    const delBtn = document.createElement('button');
+                    delBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
+                    delBtn.className = 'absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600';
+                    delBtn.onclick = (e) => { e.stopPropagation(); deleteSymbol(sym.id); };
+                    el.onclick = () => useSymbol(sym.id);
+                    el.appendChild(img); el.appendChild(delBtn); grid.appendChild(el);
+                });
+                lucide.createIcons();
+            }
+        }
+
+        // --- UI & Helpers ---
+        function setTool(tool) {
+            currentTool = tool;
+            if (tool === 'stamp') stampToolBtn.classList.remove('hidden');
+            if (tool !== 'select' && selection) anchorSelection();
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                if (btn.dataset.tool === tool) {
+                    btn.classList.add('bg-indigo-600', 'text-white');
+                    btn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                } else {
+                    btn.classList.remove('bg-indigo-600', 'text-white');
+                    btn.classList.add('text-gray-400', 'hover:bg-gray-700');
+                }
+            });
+            renderOverlay();
+        }
+
+        document.querySelectorAll('.tool-btn').forEach(btn => { btn.addEventListener('click', () => setTool(btn.dataset.tool)); });
+        function setColor(color) { currentColor = color; colorPicker.value = color; currentColorDisplay.style.backgroundColor = color; hexDisplay.innerText = color.toUpperCase(); }
+        colorPicker.addEventListener('input', (e) => setColor(e.target.value));
+        document.getElementById('gridToggle').addEventListener('change', (e) => { showGrid = e.target.checked; drawGrid(); });
+        document.getElementById('resizeBtn').addEventListener('click', () => {
+            const w = parseInt(document.getElementById('widthInput').value); const h = parseInt(document.getElementById('heightInput').value);
+            if (w > 0 && h > 0) setupCanvas(w, h);
+        });
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            if (confirm("Clear canvas?")) {
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                // In animation mode, we only clear the CURRENT frame
+                updateCurrentFrameData();
+                saveHistory();
+                updatePreview();
+            }
+        });
+        window.setPreset = (w, h) => { document.getElementById('widthInput').value = w; document.getElementById('heightInput').value = h; setupCanvas(w, h); };
+        document.getElementById('zoomIn').addEventListener('click', () => { if (zoom < 50) { zoom += 1; updateZoom(); } });
+        document.getElementById('zoomOut').addEventListener('click', () => { if (zoom > 1) { zoom -= 1; updateZoom(); } });
+        window.exportImage = () => {
+            if (selection) anchorSelection();
+            const link = document.getElementById('downloadLink');
+            link.download = `pixel-art-${currentMode}-${Date.now()}.png`;
+            link.href = mainCanvas.toDataURL('image/png');
+            link.click();
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+            if (e.key === 'p') setTool('pen');
+            if (e.key === 'e') setTool('eraser');
+            if (e.key === 'f') setTool('fill');
+            if (e.key === 'i') setTool('picker');
+            if (e.key === 's') setTool('select');
+            if (e.key === 'Escape') anchorSelection();
+            if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
+            if (e.key === ' ' && currentMode === 'design') { e.preventDefault(); togglePlay(); }
+
+            if (currentTool === 'stamp' && baseStampImage) {
+                if (e.key === 'r' || e.key === 'R') {
+                    if (e.shiftKey) rotateStamp(-90); else rotateStamp(90);
+                }
+            }
+
+            // Animation Shortcuts
+            if (e.altKey && currentMode === 'design') {
+                if (e.key === 'n' || e.key === 'N') { e.preventDefault(); addFrame(); }
+                if (e.key === 'd' || e.key === 'D') { e.preventDefault(); duplicateFrame(); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); const m = modes[currentMode]; loadFrame(m.currentFrameIndex - 1); }
+                if (e.key === 'ArrowRight') { e.preventDefault(); const m = modes[currentMode]; loadFrame(m.currentFrameIndex + 1); }
+            }
+        });
+
+        function setupTabs() {
+            const tabProps = document.getElementById('tab-properties');
+            const tabSyms = document.getElementById('tab-symbols');
+            const panelProps = document.getElementById('panel-properties');
+            const panelSyms = document.getElementById('panel-symbols');
+
+            function switchTab(tab) {
+                if (tab === 'props') {
+                    panelProps.classList.remove('hidden'); panelSyms.classList.add('hidden');
+                    tabProps.classList.add('border-indigo-500', 'text-white'); tabProps.classList.remove('border-transparent', 'text-gray-400');
+                    tabSyms.classList.remove('border-indigo-500', 'text-white'); tabSyms.classList.add('border-transparent', 'text-gray-400');
+                } else {
+                    panelProps.classList.add('hidden'); panelSyms.classList.remove('hidden');
+                    tabSyms.classList.add('border-indigo-500', 'text-white'); tabSyms.classList.remove('border-transparent', 'text-gray-400');
+                    tabProps.classList.remove('border-indigo-500', 'text-white'); tabProps.classList.add('border-transparent', 'text-gray-400');
+                }
+            }
+            tabProps.onclick = () => switchTab('props'); tabSyms.onclick = () => switchTab('syms');
+        }
+
+        init();
+
+    </script>
+</body>
+
+</html>
